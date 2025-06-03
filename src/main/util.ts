@@ -10,6 +10,8 @@ export function getAppData() {
 			return resolve(process.env.HOME!, ".config");
 		case "win32":
 			return resolve(process.env.APPDATA!);
+		case "darwin":
+			return resolve(process.env.HOME!, "Library", "Application Support");
 		default:
 			return "";
 	}
@@ -47,7 +49,7 @@ export function humanDimensionToBytes(dimension: string): number {
 	const match = dimension.toUpperCase().match(/(-?\d+[,.]?\d*)([BKMGTPEZY]?)/);
 
 	if(!match || !match[1]) return NaN;
-	
+
 	let [ , number, weight ] = match;
 	if(!weight) weight = "B";
 

@@ -68,6 +68,7 @@ export type Config = {
 	lfmUsername: string,
 	mxmusertoken: string,
 	spotify: SpotifyConfig,
+	jellyfin: JellyfinConfig,
 	discordRpc: DiscordPresenceConfig,
 	lyricsProviders: LyricsProvidersConfig,
 	targetLyricsCacheSize?: string,
@@ -84,11 +85,19 @@ export type SpotifyConfig = {
 	clientSecret: string
 }
 
+export type JellyfinConfig = {
+	enabled: boolean,
+	serverUrl: string,
+	username: string,
+	apiKey: string
+}
+
 export type LyricsProvidersConfig = {
 	Musixmatch: boolean,
 	NetEase: boolean,
 	Genius: boolean,
-	Metadata: boolean
+	Metadata: boolean,
+	Jellyfin: boolean
 }
 
 export type DiscordPresenceConfig = {
@@ -162,7 +171,7 @@ export type Capabilities = {
 }
 
 export type Update = {
-	provider: "MPRIS2" | "WinPlayer",
+	provider: "MPRIS2" | "WinPlayer" | "Jellyfin",
 	metadata: Metadata,
 	capabilities: Capabilities,
 	status: string,

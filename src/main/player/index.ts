@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
-import { Position, Update } from "../../types";
+import { Position, Update, JellyfinConfig } from "../../types";
+import { get } from "../config";
 
 const fallback: Player = {
 	init: async (_callback: Function, _denylist?: string[]) => undefined,
@@ -22,20 +23,27 @@ let player: Player;
 
 export default async function getPlayer(){
 	if(!player){
-		switch (process.platform) {
-			case "linux":
-				let MPRIS2 = await import("./mpris2");
-				player = Object.assign({}, MPRIS2);
-				break;
-			case "win32":
-				let winplayer = await import("./winplayer");
-				// @ts-ignore
-				player = Object.assign({}, winplayer);
-				break;
-			default:
-				console.error("Player: Unsupported platform!");
-				player = Object.assign({}, fallback);
-				break;
+		// Check if Jellyfin is enabled and configured
+		const jellyfinConfig = get<JellyfinConfig>("jellyfin");
+		if (jellyfinConfig.enabled && jellyfinConfig.serverUrl && jellyfinConfig.username && jellyfinConfig.apiKey) {
+			let jellyfin = await import("./jellyfin");
+			player = Object.assign({}, jellyfin);
+		} else {
+			switch (process.platform) {
+				case "linux":
+					let MPRIS2 = await import("./mpris2");
+					player = Object.assign({}, MPRIS2);
+					break;
+				case "win32":
+					let winplayer = await import("./winplayer");
+					// @ts-ignore
+					player = Object.assign({}, winplayer);
+					break;
+				default:
+					console.error("Player: Unsupported platform!");
+					player = Object.assign({}, fallback);
+					break;
+			}
 		}
 	}
 

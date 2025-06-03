@@ -5,6 +5,7 @@ import * as Musixmatch from "../lyricproviders/musixmatch";
 import * as NetEase from "../lyricproviders/netease";
 import * as Genius from "../lyricproviders/genius";
 import * as Metadata from "../lyricproviders/metadata";
+import * as Jellyfin from "../lyricproviders/jellyfin";
 import * as Local from "../lyricproviders/local";
 import type { Lyrics, Metadata as MetadataType } from "../../types";
 import { getAll as getConfig } from "../config";
@@ -14,6 +15,7 @@ const providerList: any[] = [
 	NetEase,
 	Genius,
 	Metadata,
+	Jellyfin,
 	Local
 ];
 

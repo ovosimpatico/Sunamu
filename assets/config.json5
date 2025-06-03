@@ -50,7 +50,15 @@
 	// Specify your Spotify Developer Client ID and Secret here to get the Spotify URL for the playing tracks.
 	spotify: {
 		clientID: "",
-		clientSecret: "" 
+		clientSecret: ""
+	},
+	// Jellyfin integration settings.
+	// Enable this to track what you're playing on Jellyfin and display synchronized lyrics if available.
+	jellyfin: {
+		enabled: true,
+		serverUrl: "",
+		username: "",
+		apiKey: ""
 	},
 	discordRpc: {
 		// Specify if you want your Discord Presence to show what you are playing.
@@ -66,6 +74,7 @@
 		NetEase: true,
 		Genius: true,
 		Metadata: true,
+		Jellyfin: true,
 		Local: true
 	},
 	// Do you have a player that you do not want to track at all in Sunamu? Put its name here!
