@@ -5,7 +5,6 @@ import { secondsToTime, isElectron } from "./util.js";
 import { updateSeekbarStatus, updateSeekbarTime } from "./seekbar.js";
 import { Position, SongData } from "../../types.js";
 import { getAppIcon } from "./appicon.js";
-import config from "./config.js";
 
 const documentRoot = document.querySelector(":root") as HTMLElement;
 
@@ -199,7 +198,7 @@ function positionUpdate(){
 
 	// we schedule an interval for ourselves if conditions are met
 	if(songdata.status === "Playing")
-		setTimeout(positionUpdate, config.positionUpdateInterval * 1000);
+		setTimeout(positionUpdate, 1500);
 }
 
 function setDisabledClass(elem, condition) {
@@ -241,3 +240,37 @@ window.np.registerPositionCallback((position: Position, reportsPosition: boolean
 
 	positionUpdate();
 });
+
+// Register high-precision event callbacks
+window.np.registerLyricsSyncCallback = function(callback: Function) {
+	if (window.np.socket) {
+		window.np.socket.on("lyrics.sync", callback);
+	} else if (window.np.ipcRenderer) {
+		window.np.ipcRenderer.on("lyrics.sync", (_event: any, data: any) => callback(data));
+	}
+};
+
+window.np.registerPrecisePositionCallback = function(callback: Function) {
+	if (window.np.socket) {
+		window.np.socket.on("position.precise", callback);
+	} else if (window.np.ipcRenderer) {
+		window.np.ipcRenderer.on("position.precise", (_event: any, position: number, isPlaying: boolean) => callback(position, isPlaying));
+	}
+};
+
+window.np.registerPlaybackStateCallback = function(callback: Function) {
+	if (window.np.socket) {
+		window.np.socket.on("playback.state", callback);
+	} else if (window.np.ipcRenderer) {
+		window.np.ipcRenderer.on("playback.state", (_event: any, data: any) => callback(data));
+	}
+};
+
+// Set lyrics compensation for real-time adjustment
+window.np.setLyricsCompensation = function(compensationMs: number) {
+	if (window.np.socket) {
+		window.np.socket.emit("setLyricsCompensation", compensationMs);
+	} else if (window.np.ipcRenderer) {
+		window.np.ipcRenderer.send("setLyricsCompensation", compensationMs);
+	}
+};

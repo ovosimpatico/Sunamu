@@ -4,6 +4,7 @@ import { get } from "../config";
 import axios from "axios";
 import Vibrant from "node-vibrant";
 import sharp from "sharp";
+import { positionManager } from "../positionManager";
 
 let jellyfin: any;
 let api: any;
@@ -12,13 +13,20 @@ let updateCallback: Function;
 let currentSession: any | null = null;
 let currentItem: any | null = null;
 let pollInterval: ReturnType<typeof setInterval> | null = null;
-let lastPositionUpdate: { position: number; timestamp: Date; wasPlaying: boolean } | null = null;
 
 // Dynamic import variables
 let Jellyfin: any;
 let getSessionApi: any;
-let getLyricsApi: any;
 let PlaystateCommand: any;
+
+// Export API instance for use by lyrics provider
+export function getJellyfinApi() {
+	return api;
+}
+
+export function getJellyfinConfig() {
+	return config;
+}
 
 export async function init(callback: Function): Promise<void> {
 	updateCallback = callback;
@@ -37,17 +45,16 @@ export async function init(callback: Function): Promise<void> {
 
 		Jellyfin = jellyfinModule.Jellyfin;
 		getSessionApi = apiModule.getSessionApi;
-		getLyricsApi = apiModule.getLyricsApi;
 		PlaystateCommand = clientModule.PlaystateCommand;
 
 		// Initialize Jellyfin SDK
 		jellyfin = new Jellyfin({
 			clientInfo: {
 				name: "Sunamu",
-				version: "2.2.0"
+				version: "2.3.0"
 			},
 			deviceInfo: {
-				name: "Sunamu Device",
+				name: "Sunamu-Jellyfin",
 				id: "sunamu-" + Math.random().toString(36).substr(2, 9)
 			}
 		});
@@ -70,14 +77,14 @@ async function startPolling() {
 	if (pollInterval)
 		clearInterval(pollInterval);
 
-	// Poll for session changes every 2 seconds
+	// Poll for session changes every 1 second to match positionPollInterval
 	pollInterval = setInterval(async () => {
 		try {
 			await checkCurrentSession();
 		} catch (error) {
 			debug("Jellyfin: Error checking session", error);
 		}
-	}, 2000);
+	}, 1000);
 }
 
 async function checkCurrentSession() {
@@ -105,29 +112,37 @@ async function checkCurrentSession() {
 			currentSession = musicSession;
 			currentItem = musicSession.NowPlayingItem;
 
-			// Always update position tracking for smooth GetPosition()
+			// Update position tracking
 			const positionTicks = currentSession.PlayState?.PositionTicks || 0;
-			lastPositionUpdate = {
-				position: positionTicks / 10000000,
-				timestamp: new Date(),
-				wasPlaying: isPlaying
-			};
+			const currentPosition = positionTicks / 10000000;
+
+			// Update unified position manager with real position data
+			positionManager.updatePosition(currentPosition, isPlaying);
 
 			// Only trigger UI update for significant events
 			if (isNewTrack) {
 				debug("Jellyfin: New track detected", currentItem.Name);
-				updateCallback(await getUpdate());
+
+				const update = await getUpdate();
+				updateCallback(update);
+
+				// Update position manager with track info
+				if (update?.metadata) {
+					positionManager.setTrackInfo(update.metadata.length);
+				}
 			} else if (playStateChanged) {
 				debug("Jellyfin: Play state changed:", isPlaying ? "Playing" : "Paused");
 				updateCallback(await getUpdate());
 			}
-			// Position updates will be handled by the system's pollPosition() calling GetPosition()
 		} else {
 			if (currentSession) {
 				debug("Jellyfin: Music stopped");
 				currentSession = null;
 				currentItem = null;
-				lastPositionUpdate = null;
+
+				// Clean up position manager state
+				positionManager.updatePosition(0, false);
+
 				updateCallback(null);
 			}
 		}
@@ -217,50 +232,8 @@ async function parseMetadata(item: any): Promise<Metadata> {
 		}
 	}
 
-	// Try to get lyrics from Jellyfin using the proper lyrics API
+	// Lyrics will be fetched by the lyrics provider system
 	let lyrics: string | undefined;
-	try {
-		if (item.Id && api && getLyricsApi) {
-			debug("Jellyfin: Attempting to fetch lyrics for item", item.Id);
-			const lyricsApi = getLyricsApi(api);
-			const lyricsResponse = await lyricsApi.getLyrics({
-				itemId: item.Id
-			});
-			debug("Jellyfin: Lyrics API response:", lyricsResponse.data);
-
-			if (lyricsResponse.data && lyricsResponse.data.Lyrics && Array.isArray(lyricsResponse.data.Lyrics)) {
-				// Convert Jellyfin lyrics format to LRC format
-				const lrcLines = lyricsResponse.data.Lyrics.map((lyric: any) => {
-					// Convert from 100-nanosecond ticks to milliseconds
-					const timeMs = Math.round(lyric.Start / 10000);
-					const minutes = Math.floor(timeMs / 60000);
-					const seconds = Math.floor((timeMs % 60000) / 1000);
-					const centiseconds = Math.floor((timeMs % 1000) / 10);
-
-					const timeTag = `[${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${centiseconds.toString().padStart(2, '0')}]`;
-					// Keep empty text as empty for animation - don't replace with empty string
-					return `${timeTag}${lyric.Text || ''}`;
-				});
-
-				// Add an empty lyric at the beginning if the first lyric doesn't start at 0
-				if (lyricsResponse.data.Lyrics.length > 0) {
-					const firstLyricStart = lyricsResponse.data.Lyrics[0].Start;
-					if (firstLyricStart > 0) {
-						// Add an empty lyric at 00:00.00 to trigger animation before first lyric
-						lrcLines.unshift('[00:00.00]');
-						debug("Jellyfin: Added pre-lyric animation period");
-					}
-				}
-
-				lyrics = lrcLines.join('\n');
-				debug("Jellyfin: Converted lyrics to LRC format with", lrcLines.length, "lines");
-				debug("Jellyfin: Sample LRC lines:", lrcLines.slice(0, 3).join(' | '));
-			}
-		}
-	} catch (error) {
-		// Lyrics not available, that's okay
-		debug("Jellyfin: No lyrics found for track", error);
-	}
 
 	const metadata = {
 		title: item.Name || "Unknown Title",
@@ -288,6 +261,8 @@ async function parseMetadata(item: any): Promise<Metadata> {
 
 	return metadata;
 }
+
+
 
 export async function Play() {
 	if (currentSession?.Id && api && getSessionApi && PlaystateCommand) {
@@ -416,30 +391,12 @@ export async function SetPosition(position: number) {
 }
 
 export async function GetPosition() {
-	if (!lastPositionUpdate) {
-		return {
-			howMuch: 0,
-			when: new Date()
-		};
-	}
-
-	let currentPosition = lastPositionUpdate.position;
-
-	// Only interpolate if the song was playing when we last checked
-	if (lastPositionUpdate.wasPlaying && currentSession && !currentSession.PlayState?.IsPaused) {
-		const elapsedSinceUpdate = (new Date().getTime() - lastPositionUpdate.timestamp.getTime()) / 1000;
-		currentPosition = lastPositionUpdate.position + elapsedSinceUpdate;
-
-		// Don't exceed track length
-		if (currentItem?.RunTimeTicks) {
-			const trackLength = currentItem.RunTimeTicks / 10000000;
-			currentPosition = Math.min(currentPosition, trackLength);
-		}
-	}
+	// Use the unified position manager for consistent position tracking
+	const state = positionManager.getPosition();
 
 	return {
-		howMuch: Math.max(0, currentPosition),
-		when: new Date()
+		howMuch: state.interpolatedPosition,
+		when: state.timestamp
 	};
 }
 
@@ -451,6 +408,8 @@ export function cleanup() {
 	}
 	currentSession = null;
 	currentItem = null;
-	lastPositionUpdate = null;
 	api = null;
+
+	// Clean up position manager
+	positionManager.updatePosition(0, false);
 }

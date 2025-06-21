@@ -65,17 +65,37 @@ function registerWindowCallbacks(socket: Socket) {
 	const lyricsUpdateCallback = async () => { socket.emit("refreshLyrics"); };
 	const configChangedCallback = async () => { socket.emit("configChanged"); };
 
+	// High-precision event callbacks
+	const lyricsyncCallback = async (event) => { socket.emit("lyrics.sync", event); };
+	const precisePositionCallback = async (position, isPlaying) => { socket.emit("position.precise", position, isPlaying); };
+	const playbackStateCallback = async (event) => { socket.emit("playback.state", event); };
+
 	playbackStatus.on("position", positionCallback);
 	playbackStatus.on("songdata", songDataCallback);
 	playbackStatus.on("lyrics", lyricsUpdateCallback);
 
+	// Register high-precision event listeners
+	playbackStatus.on("lyrics.sync", lyricsyncCallback);
+	playbackStatus.on("position.precise", precisePositionCallback);
+	playbackStatus.on("playback.state", playbackStateCallback);
+
 	configEmitter.on("configChanged", configChangedCallback);
+
+	// Handle real-time lyrics compensation adjustment
+	socket.on("setLyricsCompensation", (compensationMs: number) => {
+		// Import eventDispatcher here to avoid circular dependency
+		const { eventDispatcher } = require("./eventDispatcher");
+		eventDispatcher.setCompensation(compensationMs);
+	});
 
 	socket.once("disconnect", () => {
 		socket.removeAllListeners();
 		playbackStatus.off("position", positionCallback);
 		playbackStatus.off("songdata", songDataCallback);
 		playbackStatus.off("lyrics", lyricsUpdateCallback);
+		playbackStatus.off("lyrics.sync", lyricsyncCallback);
+		playbackStatus.off("position.precise", precisePositionCallback);
+		playbackStatus.off("playback.state", playbackStateCallback);
 
 		configEmitter.off("configChanged", configChangedCallback);
 	});

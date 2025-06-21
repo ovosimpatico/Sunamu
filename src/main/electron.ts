@@ -80,12 +80,19 @@ function registerIpc() {
 	ipcMain.on("close", (e) => {
 		const _win = BrowserWindow.fromWebContents(e.sender);
 		if (_win) _win.close();
-		
+
 		if(!BrowserWindow.getAllWindows().length)
 			app.exit();
 	});
 
 	ipcMain.on("openExternal", (_e, uri) => shell.openExternal(uri));
+
+// Handle real-time lyrics compensation adjustment
+ipcMain.on("setLyricsCompensation", (_e, compensationMs: number) => {
+	// Import eventDispatcher here to avoid circular dependency
+	const { eventDispatcher } = require("./eventDispatcher");
+	eventDispatcher.setCompensation(compensationMs);
+});
 }
 
 function isWidgetModeForScene(scene: string){
@@ -108,9 +115,19 @@ function registerWindowCallbacks(win: BrowserWindow){
 	const lyricsUpdateCallback = async () => { if(!win.webContents.isLoading()) return win.webContents.send("refreshLyrics"); };
 	const configChangedCallback = async () => { if(!win.webContents.isLoading()) return win.webContents.send("configChanged"); };
 
+	// High-precision event callbacks
+	const lyricsyncCallback = async (event) => { if(!win.webContents.isLoading()) return win.webContents.send("lyrics.sync", event); };
+	const precisePositionCallback = async (position, isPlaying) => { if(!win.webContents.isLoading()) return win.webContents.send("position.precise", position, isPlaying); };
+	const playbackStateCallback = async (event) => { if(!win.webContents.isLoading()) return win.webContents.send("playback.state", event); };
+
 	playbackStatus.on("position", positionCallback);
 	playbackStatus.on("songdata", songDataCallback);
 	playbackStatus.on("lyrics", lyricsUpdateCallback);
+
+	// Register high-precision event listeners
+	playbackStatus.on("lyrics.sync", lyricsyncCallback);
+	playbackStatus.on("position.precise", precisePositionCallback);
+	playbackStatus.on("playback.state", playbackStateCallback);
 
 	configEmitter.on("configChanged", configChangedCallback);
 
@@ -118,6 +135,9 @@ function registerWindowCallbacks(win: BrowserWindow){
 		playbackStatus.off("position", positionCallback);
 		playbackStatus.off("songdata", songDataCallback);
 		playbackStatus.off("lyrics", lyricsUpdateCallback);
+		playbackStatus.off("lyrics.sync", lyricsyncCallback);
+		playbackStatus.off("position.precise", precisePositionCallback);
+		playbackStatus.off("playback.state", playbackStateCallback);
 
 		configEmitter.off("configChanged", configChangedCallback);
 	});

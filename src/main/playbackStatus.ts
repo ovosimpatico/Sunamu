@@ -8,11 +8,37 @@ import { queryLyricsAutomatically, saveCustomLyrics } from "./integrations/lyric
 import { debug } from ".";
 import { lyricsActive } from "./appStatus";
 import EventEmitter from "events";
+import { eventDispatcher, onLyricsSync, onPositionUpdate, onPlaybackState } from "./eventDispatcher";
+import { positionManager } from "./positionManager";
 
 const emitter = new EventEmitter();
 export{ emitter as default };
 
-setInterval(pollPosition, get("positionPollInterval") * 1000);
+// Set up event dispatcher listeners to bridge to the existing event system
+onLyricsSync((event) => {
+	// Emit precise lyrics sync events
+	emitter.emit("lyrics.sync", event);
+});
+
+onPositionUpdate((event) => {
+	// Only emit high-precision position updates to avoid flooding
+	if (event.accuracy === "high") {
+		emitter.emit("position.precise", event.position, event.isPlaying);
+	}
+});
+
+onPlaybackState((event) => {
+	// Emit playback state changes
+	emitter.emit("playback.state", event);
+});
+
+// Initialize position manager with player's GetPosition function
+async function initializePositionManager() {
+	const player = await getPlayer();
+	positionManager.initialize(() => player.GetPosition());
+}
+
+initializePositionManager();
 
 const fallback: DeepPartial<SongData> = {
 	provider: undefined,
@@ -86,6 +112,11 @@ export async function updateInfo(update?: Update) {
 		songdata.lastfm = undefined;
 		songdata.spotify = undefined;
 
+		// Update position manager and event dispatcher with track info
+		if (update?.metadata.length) {
+			eventDispatcher.setTrackInfo(update.metadata.length, []);
+		}
+
 		// broadcast our initial update so people won't think sunamu is laggy asf
 		emitter.emit("songdata", songdata, true);
 		// this also updates the lyrics to whatever screen is suitable
@@ -97,7 +128,7 @@ export async function updateInfo(update?: Update) {
 		// we pre-emptively check our symbol to avoid consuming API calls for nothing
 		// because there's already newer stuff than us
 		if(currentSymbol !== updateInfoSymbol) return;
-	
+
 		// BEGIN OF "HUGE SUSPENSION POINT"
 		const extraMetadata: Partial<SongData> = {};
 		extraMetadata.spotify = await pollSpotifyDetails(update.metadata);
@@ -112,6 +143,12 @@ export async function updateInfo(update?: Update) {
 
 		// now we assign the extra metadata on songdata
 		Object.assign(songdata, extraMetadata);
+
+		// Update event dispatcher with lyrics if available
+		if (extraMetadata.lyrics && songdata.metadata.length) {
+			const lyricsLines = parseLyricsForEventDispatcher(extraMetadata.lyrics);
+			eventDispatcher.setTrackInfo(songdata.metadata.length, lyricsLines);
+		}
 
 	}
 
@@ -174,11 +211,38 @@ emitter.on("songdata", (_songdata, metadataChanged) => {
 });
 
 export async function pollPosition() {
+	// Position tracking is now handled by the unified position manager
+	// This function is kept for backward compatibility but simplified
 	if (songdata.status === "Playing"){
-		songdata.elapsed = await (await getPlayer()).GetPosition();
+		const state = positionManager.getPosition();
+		songdata.elapsed = {
+			howMuch: state.interpolatedPosition,
+			when: state.timestamp
+		};
 		songdata.reportsPosition = songdata.elapsed.howMuch > 0;
 	}
 
 	// calls
 	emitter.emit("position", songdata.elapsed, songdata.reportsPosition);
+}
+
+// Helper function to parse lyrics for event dispatcher
+function parseLyricsForEventDispatcher(lyrics: Lyrics): Array<{ time?: number; text: string; }> {
+	if (!lyrics || typeof lyrics === 'object' && lyrics.unavailable) return [];
+
+	const lines: Array<{ time?: number; text: string; }> = [];
+
+	if (typeof lyrics === 'object' && lyrics.lines) {
+		// Convert Lyrics object to array format
+		lyrics.lines.forEach(line => {
+			lines.push({
+				time: line.time,
+				text: line.text
+			});
+		});
+	}
+	// Note: string lyrics are not currently supported in the Lyrics type
+	// This branch is kept for potential future compatibility
+
+	return lines;
 }

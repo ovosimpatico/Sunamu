@@ -2,7 +2,6 @@ import lang from "./lang/index.js";
 import songdata from "./songdata.js";
 import config from "./config.js";
 import { animateScroll } from "./util.js";
-
 const container = document.getElementById("lyrics")!;
 const copyright = document.getElementById("lyrics-copyright")!;
 
@@ -72,7 +71,7 @@ export function putLyricsInPlace() {
 							songdata.metadata.length
 						) - verse.start
 					);
-					
+
 					const span = document.createElement("span");
 					span.textContent = verse.text;
 					span.style.setProperty("--word-duration", `${duration}s`);
@@ -120,7 +119,7 @@ export function putLyricsInPlace() {
 			emptyProgress.classList.add("empty-progress");
 			elem.appendChild(emptyProgress);
 		}
-		
+
 		container.appendChild(elem);
 	}
 
@@ -142,7 +141,7 @@ export function updateActiveLyrics(elapsed: number) {
 		container.classList.remove("synchronized");
 		return;
 	}
-	
+
 	container.classList.add("synchronized");
 
 	// we get the active line
@@ -168,6 +167,11 @@ export function updateActiveLyrics(elapsed: number) {
 		}
 	}
 
+	updateLyricsVisual(lineIndex, wordIndex, elapsed);
+}
+
+// High-precision lyrics sync using event dispatcher
+function updateLyricsVisual(lineIndex: number, wordIndex: number, elapsed: number) {
 	// now we iterate through the container to unset previous active stuff
 	const wasActiveBefore = container.children[lineIndex]?.classList?.contains("active");
 
@@ -188,11 +192,11 @@ export function updateActiveLyrics(elapsed: number) {
 				}
 			}
 
-			if(line.classList.contains("empty")){
+			if(line.classList.contains("empty") && songdata.lyrics?.lines){
 				// determine empty progress
 				const emptyProgress = [...line.children].find(x => x.classList.contains("empty-progress")) as HTMLElement;
 
-				const percentageToGo = (elapsed - songdata.lyrics.lines![i].time!) / ((songdata.lyrics.lines![i + 1]?.time || songdata.metadata.length) - songdata.lyrics.lines![i].time!);
+				const percentageToGo = (elapsed - songdata.lyrics.lines[i].time!) / ((songdata.lyrics.lines[i + 1]?.time || songdata.metadata.length) - songdata.lyrics.lines[i].time!);
 				emptyProgress.style.setProperty("--waitTime", `${percentageToGo}`);
 			}
 
