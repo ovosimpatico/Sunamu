@@ -10,6 +10,7 @@ const documentRoot = document.querySelector(":root") as HTMLElement;
 
 const featRegex = / \[?\{?\(?(?:feat\.?|ft\.?|featuring) .+\)?\]?\]?/i;
 let artDataBlobUrl: string | undefined;
+let hlsInstances: any[] = [];
 
 export function updateNowPlaying() {
 	// CHECK ID
@@ -107,10 +108,16 @@ export function updateNowPlaying() {
 }
 
 async function updateAlbumArt(){
-	if (songdata.metadata.artUrl && isElectron())
-		documentRoot.style.setProperty("--cover-art-url", `url("${songdata.metadata.artUrl.split("\"").join("\\\"")}")`);
-	else if (songdata.metadata.artData?.data) {
+	const albumArtVideo = document.getElementById("album-art-video") as HTMLVideoElement;
+	const backgroundVideo = document.getElementById("background-video") as HTMLVideoElement;
 
+	let urlToApply = "";
+	let isVideo = false;
+
+	if (songdata.metadata.artUrl && isElectron()) {
+		urlToApply = songdata.metadata.artUrl;
+		isVideo = urlToApply.endsWith(".mp4") || urlToApply.endsWith(".webm") || urlToApply.endsWith(".m3u8");
+	} else if (songdata.metadata.artData?.data) {
 		const newArt = new Uint8Array(songdata.metadata.artData?.data);
 
 		if(artDataBlobUrl){
@@ -128,20 +135,148 @@ async function updateAlbumArt(){
 				same = false;
 
 			if (same){
-				documentRoot.style.setProperty("--cover-art-url", `url("${artDataBlobUrl}")`);
-				return;
+				urlToApply = artDataBlobUrl;
+				// blob urls aren't explicitly checked for mp4 here natively yet, but we allow future proofing
+				isVideo = (songdata.metadata.artData?.type?.[0] === "video/mp4");
+			} else {
+				(window.URL || window.webkitURL).revokeObjectURL(artDataBlobUrl);
+				artDataBlobUrl = undefined;
 			}
-
-			(window.URL || window.webkitURL).revokeObjectURL(artDataBlobUrl);
-			artDataBlobUrl = undefined;
 		}
 
-		const newBlob = new Blob([newArt]);
-		artDataBlobUrl = (window.URL || window.webkitURL).createObjectURL(newBlob);
-		documentRoot.style.setProperty("--cover-art-url", `url("${artDataBlobUrl}")`);
+		if (!urlToApply) {
+			const newBlob = new Blob([newArt], { type: songdata.metadata.artData?.type?.[0] });
+			artDataBlobUrl = (window.URL || window.webkitURL).createObjectURL(newBlob);
+			urlToApply = artDataBlobUrl;
+			isVideo = (songdata.metadata.artData?.type?.[0] === "video/mp4");
+		}
+	}
 
-	} else
+	if (urlToApply) {
+		if (isVideo) {
+			documentRoot.style.removeProperty("--cover-art-url");
+			
+			const triggerFallback = () => {
+				console.warn("[Sunamu] Video playback failed or timed out. Falling back to static artwork.");
+				documentRoot.style.setProperty("--cover-art-url", `url("${urlToApply.split("\"").join("\\\"")}")`);
+				if (albumArtVideo) {
+					albumArtVideo.style.display = "none";
+					albumArtVideo.dataset.currentSrc = "";
+				}
+				if (backgroundVideo) {
+					backgroundVideo.style.display = "none";
+					backgroundVideo.dataset.currentSrc = "";
+				}
+				const albumArtElement = document.getElementById("album-art");
+				if (albumArtElement) albumArtElement.style.visibility = "visible";
+				document.documentElement.classList.remove("video-active");
+			};
+
+			const playVideo = (videoElem: HTMLVideoElement) => {
+				if (videoElem.dataset.currentSrc === urlToApply) {
+					if (videoElem.paused) videoElem.play().catch(() => {});
+					return;
+				}
+				
+				const isM3U8 = urlToApply.endsWith(".m3u8");
+				videoElem.dataset.currentSrc = urlToApply;
+				videoElem.crossOrigin = "anonymous";
+				
+				let loadTimeout = setTimeout(() => {
+					if (videoElem.readyState < 2) triggerFallback();
+				}, 2000);
+
+				if (videoElem.src !== urlToApply && !isM3U8) {
+					console.log("[Sunamu] Loading MP4 Video:", urlToApply);
+					videoElem.src = urlToApply;
+					videoElem.load();
+					videoElem.onloadedmetadata = () => clearTimeout(loadTimeout);
+					videoElem.play().catch(e => {
+						console.warn("[Sunamu] Playback blocked:", e);
+						triggerFallback();
+					});
+				} else if (isM3U8) {
+					// @ts-ignore
+					if (window.Hls && window.Hls.isSupported()) {
+						console.log("[Sunamu] Hls.js is available and supported. Initializing...");
+						console.log("[Sunamu] Loading HLS Stream:", urlToApply);
+						hlsInstances.forEach(h => h.destroy());
+						hlsInstances = [];
+						
+						// @ts-ignore
+						const hls = new window.Hls();
+						hls.loadSource(urlToApply);
+						hls.attachMedia(videoElem);
+						// @ts-ignore
+						hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+							clearTimeout(loadTimeout);
+							console.log("[Sunamu] Hls.js Manifest parsed successfully.");
+							videoElem.play().catch(e => {
+								console.warn("[Sunamu] HLS Playback blocked:", e);
+								triggerFallback();
+							});
+						});
+						// @ts-ignore
+						hls.on(window.Hls.Events.ERROR, (event, data) => {
+							if (data.fatal) {
+								console.error("[Sunamu] HLS Fatal Error:", data.type, data.details);
+								triggerFallback();
+								hls.destroy();
+							}
+						});
+					}
+				}
+			};
+
+			if (albumArtVideo) {
+				albumArtVideo.style.display = "block";
+				playVideo(albumArtVideo);
+				
+				// Post-load size verification: detect GPU rendering failure
+				setTimeout(() => {
+					if (albumArtVideo.style.display === "block" && albumArtVideo.videoWidth === 0) {
+						console.warn("[Sunamu] Video is active but has 0 size. Potential GPU hang detected.");
+						triggerFallback();
+					}
+				}, 3000);
+			}
+			if (backgroundVideo) {
+				backgroundVideo.style.display = "block";
+				playVideo(backgroundVideo);
+				setTimeout(() => { backgroundVideo.style.opacity = "1"; }, 100);
+			}
+			const albumArtElement = document.getElementById("album-art");
+			if (albumArtElement) albumArtElement.style.visibility = "hidden";
+			document.documentElement.classList.add("video-active");
+		} else {
+			documentRoot.style.setProperty("--cover-art-url", `url("${urlToApply.split("\"").join("\\\"")}")`);
+			
+			if (albumArtVideo) albumArtVideo.style.display = "none";
+			if (backgroundVideo) {
+				backgroundVideo.style.opacity = "0";
+				setTimeout(() => { backgroundVideo.style.display = "none"; }, 2000);
+			}
+			const albumArtElement = document.getElementById("album-art");
+			if (albumArtElement) albumArtElement.style.visibility = "visible";
+			document.documentElement.classList.remove("video-active");
+		}
+	} else {
 		documentRoot.style.removeProperty("--cover-art-url");
+		if (albumArtVideo) {
+			albumArtVideo.style.display = "none";
+			albumArtVideo.dataset.currentSrc = "";
+		}
+		if (backgroundVideo) {
+			backgroundVideo.style.opacity = "0";
+			setTimeout(() => { 
+				backgroundVideo.style.display = "none"; 
+				backgroundVideo.dataset.currentSrc = "";
+			}, 2000);
+		}
+		const albumArtElement = document.getElementById("album-art");
+		if (albumArtElement) albumArtElement.style.visibility = "visible";
+		document.documentElement.classList.remove("video-active");
+	}
 }
 
 function updateColors(){

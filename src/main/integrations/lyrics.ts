@@ -1,12 +1,13 @@
 import { debug } from "../";
 import { get as getLyrics, save as saveLyrics } from "./lyricsOffline";
+import { get as getConfig } from "../config";
 
-import { query as Musixmatch } from "../lyricproviders/musixmatch";
-import { query as NetEase } from "../lyricproviders/netease";
-import { query as Genius } from "../lyricproviders/genius";
+import { query as AppleMusic } from "../lyricproviders/applemusic";
+import { query as Deezer } from "../lyricproviders/deezer";
+import { query as LRCLIB } from "../lyricproviders/lrclib";
 import { Lyrics, Metadata } from "../../types";
 
-export async function queryLyrics(metadata: Metadata, spotifyId?: string): Promise<Lyrics | undefined> {
+export async function queryLyrics(metadata: Metadata): Promise<Lyrics | undefined> {
 	if (!metadata.artist || !metadata.title) // there can't be lyrics without at least those two fields
 		return;
 	
@@ -20,21 +21,19 @@ export async function queryLyrics(metadata: Metadata, spotifyId?: string): Promi
 		if (!cached) debug(`Cache miss for ${metadata.artist} - ${metadata.title}`);
 		else if (!cached?.synchronized) debug(`Cache hit but unsynced lyrics. Trying to fetch synchronized lyrics for ${metadata.artist} - ${metadata.title}`);
 
-		const providers = {
-			Musixmatch,
-			NetEase
+		const providers: any = {
+			AppleMusic
 		};
 
-		// if cached then we could assume it is unsync and genius can only provide unsync
-		// @ts-ignore
-		if (!cached) providers.Genius = Genius;
+		if (getConfig("deezerSearch")) providers.Deezer = Deezer;
+		if (getConfig("lrclibFallback")) providers.LRCLIB = LRCLIB;
 
 		for (const provider in providers) {
 			debug("Fetching from " + provider);
-			const _lyrics = await providers[provider](metadata, spotifyId);
+			const _lyrics = await providers[provider](metadata);
 			if (_lyrics?.lines.length){
 				lyrics = _lyrics;
-				break;
+				if (_lyrics.synchronized) break;
 			}
 		}
 

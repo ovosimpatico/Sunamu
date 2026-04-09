@@ -5,6 +5,9 @@
 	width: 125vw;
 	height: 125vh;
 	z-index: -2;
+	transition: ease 2s background-image,
+				ease 2s background-color,
+				ease 1s opacity;
 
 	background-blend-mode: multiply;
 	background-position: center;
@@ -17,6 +20,27 @@
 				ease 2s background-color;
 
 }
+
+html.video-active .background {
+	display: none !important;
+}
+
+#background-video {
+	position: fixed;
+	top: -12.5vh;
+	left: -12.5vw;
+	width: 125vw;
+	height: 125vh;
+	z-index: -1;
+	object-fit: cover;
+	filter: blur(80px) brightness(40%) saturate(150%);
+	transform: scale(1.1); /* Prevent edge leakage from blur */
+	display: none;
+	opacity: 0;
+	transition: opacity 2s ease;
+	pointer-events: none !important;
+}
+
 
 html:not(.colorblock):not(.widget-mode) .background::before,
 html:not(.colorblock):not(.widget-mode) .background::after {

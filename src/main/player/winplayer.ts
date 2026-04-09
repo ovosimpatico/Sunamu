@@ -1,19 +1,30 @@
-import { Update } from "../../types";
-// @ts-ignore
-import Player from "winplayer-node";
-import Vibrant from "node-vibrant";
-
-import { debug } from "..";
 import sharp from "sharp";
+import { Update } from "../../types";
+import Vibrant from "node-vibrant";
+import { info, error, debug } from "../logger";
 
-let _player;
+let _player: any;
+let isBroken = false;
 
 export async function init(callback: Function): Promise<void>{
-	const _cb = async () => callback(await getUpdate());
-	_player = new Player(_cb);
+	try {
+		// eslint-disable-next-line @typescript-eslint/no-var-requires
+		const Player = require("winplayer-node");
+		const _cb = async () => callback(await getUpdate());
+		_player = new Player(_cb);
+		info("Windows Player: Successfully initialized winplayer-node");
+	} catch (e) {
+		isBroken = true;
+		error("Windows Player: Failed to load winplayer-node. Native media controls will be disabled.", e);
+	}
+}
+
+export function isFunctional(): boolean {
+	return !isBroken && !!_player;
 }
 
 export async function getUpdate(): Promise<Update | null> {
+	if (!isFunctional()) return null;
 	const update: Update = await _player.getUpdate();
 
 	if(update !== null){
@@ -47,50 +58,65 @@ export async function getUpdate(): Promise<Update | null> {
 }
 
 export function Play() {
+	if (!isFunctional()) return;
 	return _player.Play();
 }
 
 export function Pause() {
+	if (!isFunctional()) return;
 	return _player.Pause();
 }
 
 export function PlayPause() {
+	if (!isFunctional()) return;
 	return _player.PlayPause();
 }
 
 export function Stop() {
+	if (!isFunctional()) return;
 	return _player.Stop();
 }
 
 export function Next() {
+	if (!isFunctional()) return;
 	return _player.Next();
 }
 
 export function Previous() {
+	if (!isFunctional()) return;
 	return _player.Previous();
 }
 
 export function Shuffle() {
+	if (!isFunctional()) return;
 	return _player.Shuffle();
 }
 
 export function Repeat() {
+	if (!isFunctional()) return;
 	return _player.Repeat();
 }
 
 export function Seek(offset: number) {
+	if (!isFunctional()) return;
 	return _player.Seek(offset);
 }
 
 export function SeekPercentage(percentage: number) {
+	if (!isFunctional()) return;
 	return _player.SeekPercentage(percentage);
 }
 
 export function SetPosition(position: number) {
+	if (!isFunctional()) return;
 	return _player.SetPosition(position);
 }
 
 export async function GetPosition() {
+	if (!isFunctional()) return {
+		howMuch: 0,
+		when: new Date()
+	};
 	return {
 		howMuch: _player.GetPosition(),
 		when: new Date()

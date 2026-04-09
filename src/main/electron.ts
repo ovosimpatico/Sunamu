@@ -8,14 +8,23 @@ import windowStateKeeper from "electron-window-state";
 import { addLyricsUpdateCallback, addPositionCallback, addSongDataCallback, deleteLyricsUpdateCallback, deletePositionCallback, deleteSongDataCallback, songdata } from "./playbackStatus";
 import { getAppData } from "./util";
 import { getThemeLocation } from "./themes";
+import { info } from "./logger";
 
 process.title = "sunamu";
 
 const openedBrowserWindows: Map<BrowserWindow, string> = new Map();
 let player: Player;
 
-// Enable GPU rasterization so it's smooth asf
+// Stabilize GPU on macOS to avoid VMM kernel failures
 app.commandLine.appendSwitch("enable-gpu-rasterization");
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
+if (process.platform === "darwin") {
+	app.commandLine.appendSwitch("disable-features", "Vulkan"); // Vulkan on macOS often triggers VMM probes
+	app.commandLine.appendSwitch("use-gl", "angle");
+	app.commandLine.appendSwitch("use-angle", "metal"); // Force Metal backend to bypass legacy probes
+	app.commandLine.appendSwitch("disable-gpu-memory-buffer-video-frames"); // Specific VMM trigger
+	app.commandLine.appendSwitch("disable-gpu-driver-bug-workarounds");
+}
 
 if (process.platform === "linux") {
 	if (process.env.WAYLAND_DISPLAY && process.env.XDG_SESSION_TYPE === "wayland" && waylandOzone) {
@@ -177,14 +186,25 @@ async function spawnWindow(scene = "electron") {
 	});
 
 	registerWindowCallbacks(win);
+	info(`Spawned window for scene: ${scene}`);
 	return win;
 }
 
 export default async function electronMain() {
 	player = await getPlayer();
+	info("Registering Electron IPC...");
 	registerElectronIpc();
 
+	info("Waiting for Electron app to be ready...");
 	await app.whenReady();
+	info("Electron app is ready.");
+	
+	// Monitor GPU process for failures
+	app.on("child-process-gone", (_, details) => {
+		if (details.type === "GPU") {
+			console.error("[Sunamu] GPU Process Failure:", details.reason);
+		}
+	});
 	for(const scene in getAllConfig().scenes){
 		if (getAllConfig().scenes[scene].type === "electron")
 			openedBrowserWindows.set(await spawnWindow(scene), scene);

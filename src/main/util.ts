@@ -10,6 +10,8 @@ export function getAppData() {
 			return resolve(process.env.HOME!, ".config");
 		case "win32":
 			return resolve(process.env.APPDATA!);
+		case "darwin":
+			return resolve(process.env.HOME!, "Library", "Application Support");
 		default:
 			return "";
 	}

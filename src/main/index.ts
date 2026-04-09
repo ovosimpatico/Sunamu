@@ -5,7 +5,7 @@ import { updatePresence } from "./integrations/discordrpc";
 import Instance from "./instance";
 import { convertUncompressed, statCachePath } from "./integrations/lyricsOffline";
 
-import { logToDebug } from "./logger";
+import { logToDebug, info, error, fatal } from "./logger";
 export { logToDebug as debug } from "./logger";
 
 process.title = "sunamu";
@@ -13,6 +13,17 @@ process.title = "sunamu";
 let player: Player;
 
 async function main(): Promise<void> {
+	info("Sunamu starting...");
+
+	process.on("uncaughtException", (err) => {
+		fatal("Uncaught Exception:", err);
+		process.exit(1);
+	});
+
+	process.on("unhandledRejection", (reason) => {
+		error("Unhandled Rejection:", reason);
+	});
+
 	const instance = new Instance();
 	const haveLock = await instance.requestLock();
 

@@ -1,7 +1,6 @@
 #album-art {
-	flex-shrink: 0;
-	display: inline-block;
-	height: 232px;
+	width: 100%;
+	height: 100%;
 	background-image: var(--cover-art-url);
 	background-position: center;
 	background-repeat: no-repeat;
@@ -16,39 +15,70 @@
 		0px 5.99045px 5.67517px rgba(0, 0, 0, 0.0300374),
 		0px 3.44189px 3.26074px rgba(0, 0, 0, 0.0243888),
 		0px 1.51486px 1.43513px rgba(0, 0, 0, 0.0167767);
+	transition:
+		ease 0.5s background-image,
+		ease 0.2s;
+	z-index: 1;
+}
+
+#album-art-video {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	border-radius: 16px;
+	object-fit: cover;
+	pointer-events: none;
+	box-shadow: inherit; 
+	z-index: 2;
+	pointer-events: none;
+}
+
+html.electron.widget-mode:not(.fullscreen) #album-art-video {
+	-webkit-app-region: drag;
+	pointer-events: auto;
+}
+
+.album-art-container {
+	position: relative;
+	display: flex;
+	flex-shrink: 0;
+	height: 232px;
 	aspect-ratio: 1;
-	transition: ease .5s background-image,
-				ease .2s;
+	background-color: rgba(255, 255, 255, 0.05); /* Placeholder if everything disappears */
+	border-radius: 16px;
 }
 
-html.no-album-art #album-art {
-	display: none;
+html.no-album-art #album-art,
+html.no-album-art #album-art-video {
+	display: none !important;
 }
 
-html.idle #album-art {
-	height: 88px;
+html.idle .album-art-container {
+  height: 88px;
 }
 
 /* iPad */
 @media only screen and (max-width: 1024px) {
-	#album-art {
-		height: 160px;
-		border-radius: 12px;
-	}
+  .album-art-container {
+    height: 160px;
+    border-radius: 12px;
+  }
 
-	html.idle #album-art {
-		height: 72px;
-	}
+  html.idle .album-art-container {
+    height: 72px;
+  }
 }
 
 /* iPhone */
 @media only screen and (max-width: 812px) {
-	#album-art {
-		height: 96px;
-		border-radius: 8px;
-	}
+  .album-art-container {
+    height: 96px;
+    border-radius: 8px;
+  }
 
-	html.idle #album-art {
-		height: 40px;
-	}
+  html.idle .album-art-container {
+    height: 40px;
+  }
 }

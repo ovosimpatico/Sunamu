@@ -29,7 +29,16 @@ export default async function getPlayer(){
 				break;
 			case "win32":
 				let winplayer = await import("./winplayer");
-				player = Object.assign({}, winplayer);
+				if (typeof (winplayer as any).isFunctional === "function" && !(winplayer as any).isFunctional()) {
+					console.error("Player: Windows player is broken, falling back to passive mode.");
+					player = Object.assign({}, fallback);
+				} else {
+					player = Object.assign({}, winplayer);
+				}
+				break;
+			case "darwin":
+				let macosplayer = await import("./macos");
+				player = Object.assign({}, macosplayer);
 				break;
 			default:
 				console.error("Player: Unsupported platform!");

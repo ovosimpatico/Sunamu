@@ -5,7 +5,8 @@ import { getSpotifySongFromId, searchSpotifySong } from "./thirdparty/spotify";
 import { getLFMTrackInfo } from "./thirdparty/lastfm";
 import { spotiId } from "./util";
 import { queryLyrics } from "./integrations/lyrics";
-import { debug } from ".";
+import { queryArtwork } from "./integrations/artwork";
+import { info } from "./logger";
 
 // eslint-disable-next-line no-unused-vars
 const songdataCallbacks: Array<(songdata?: SongData, metadataChanged?: boolean) => Promise<void>> = [];
@@ -63,8 +64,16 @@ export async function updateInfo(update?: Update) {
 	// did the metadata change?
 	const metadataChanged = hasMetadataChanged(songdata.metadata, update?.metadata);
 
+	// Sticky Artwork Logic: Preserve video URL if song ID hasn't changed
+	const currentArtUrl = songdata.metadata.artUrl;
+	const isAnimated = currentArtUrl && (currentArtUrl.endsWith(".mp4") || currentArtUrl.endsWith(".m3u8") || currentArtUrl.endsWith(".webm"));
+
 	// incrementally update the current status
 	Object.assign(songdata, update || fallback);
+
+	if (!metadataChanged && isAnimated && songdata.metadata.id) {
+		songdata.metadata.artUrl = currentArtUrl;
+	}
 
 	if (metadataChanged) {
 		// we set our symbol as the global one since we're tasked with extra stuff
@@ -77,6 +86,7 @@ export async function updateInfo(update?: Update) {
 
 		// broadcast our initial update so people won't think sunamu is laggy asf
 		await broadcastSongData(true);
+		info("Metadata changed and broadcasted: " + songdata.metadata.title + " - " + songdata.metadata.artist);
 		// this also updates the lyrics to "no lyrics to show" screen
 
 		// we pre-emptively check our symbol to avoid consuming API calls for nothing
@@ -91,7 +101,12 @@ export async function updateInfo(update?: Update) {
 		const extraMetadata: Partial<SongData> = {};
 		extraMetadata.spotify = await pollSpotifyDetails(update.metadata);
 		extraMetadata.lastfm = await getLFMTrackInfo(update.metadata, get("lfmUsername"));
-		extraMetadata.lyrics = await queryLyrics(update.metadata, extraMetadata.spotify?.id);
+		extraMetadata.lyrics = await queryLyrics(update.metadata);
+
+		const improvedArtwork = await queryArtwork(update.metadata);
+		if (improvedArtwork) {
+			songdata.metadata.artUrl = improvedArtwork;
+		}
 		// END OF "HUGE SUSPENSION POINT"
 
 		// we now have to check our symbol to avoid updating stuff that is newer than us
@@ -154,8 +169,7 @@ async function pollSpotifyDetails(metadata: Metadata): Promise<SpotifyInfo | und
 
 // ------ SONG DATA
 export async function broadcastSongData(metadataChanged: boolean){
-	debug(1, "broadcastSongData called with", metadataChanged);
-	//debug(songdata);
+	info("broadcastSongData called with " + metadataChanged);
 	for (const cb of songdataCallbacks) await cb(songdata, metadataChanged);
 }
 
